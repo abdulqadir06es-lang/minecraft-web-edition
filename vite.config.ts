@@ -4,6 +4,8 @@ import { fileURLToPath, URL } from 'node:url';
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // GitHub Pages serves the app from a project subpath
+  base: '/minecraft-web-edition/',
   plugins: [react()],
   resolve: {
     alias: {
