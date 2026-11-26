@@ -2,10 +2,10 @@ import { useEffect, useRef } from 'react';
 import { Game } from '@/game/Game';
 import { isTouchDevice } from '@/game/input';
 
-/** Wires desktop (keyboard + pointer lock mouse) and mobile (touch handled by UI components
+/** Wires desktop (keyboard + pointer lock mouse) and mobile (touch handled by TouchControls
  *  writing into the same InputState) controls to the game instance. */
 export function useControls(
-  gameRef: React.MutableRefObject<Game | null>,
+  game: Game | null,
   active: boolean,
   onSelectSlot: (slot: number) => void,
   onToggleInventory: () => void
@@ -13,15 +13,13 @@ export function useControls(
   const touch = useRef(isTouchDevice()).current;
 
   useEffect(() => {
-    if (!active) return;
-    const game = gameRef.current;
-    if (!game) return;
+    if (!active || !game) return;
     const input = game.inputState;
 
     const keys = new Set<string>();
     const applyKeys = () => {
       input.moveX = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
-      // forward (W/Up) sets moveZ = +1; Game.ts converts +forward to camera direction
+      // forward (W/Up) sets moveZ = +1; Game converts +forward to camera direction
       input.moveZ = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0);
       input.jump = keys.has(' ');
       input.sneak = keys.has('shift') && !keys.has('control');
@@ -54,12 +52,12 @@ export function useControls(
       input.breakHeld = false;
     };
 
-    // --- mouse (pointer lock) ---
-    const canvas = game.renderer.domElement;
+    const canvas = game.domElement;
     let locked = false;
 
     const requestLock = () => {
-      if (!locked && !touch) void canvas.requestPointerLock();
+      if (touch) return; // NEVER pointer lock on touch devices
+      if (!locked) void canvas.requestPointerLock();
       game.sound.resume();
     };
 
@@ -75,6 +73,7 @@ export function useControls(
     };
 
     const onMouseDown = (e: MouseEvent) => {
+      if (touch) return; // touch devices use TouchControls instead
       if (!locked) {
         requestLock();
         return;
@@ -92,7 +91,6 @@ export function useControls(
     };
     const onContextMenu = (e: Event) => e.preventDefault();
     const onWheel = (e: WheelEvent) => {
-      // works with or without pointer lock, like Minecraft
       e.preventDefault();
       if ((e.target as HTMLElement).closest('[data-ui-panel]')) return;
       onSelectSlot(game.selectedSlot + (e.deltaY > 0 ? 1 : -1));
@@ -119,7 +117,7 @@ export function useControls(
       canvas.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('wheel', onWheel);
     };
-  }, [active, gameRef, onSelectSlot, onToggleInventory, touch]);
+  }, [active, game, onSelectSlot, onToggleInventory, touch]);
 
   return { touch };
 }

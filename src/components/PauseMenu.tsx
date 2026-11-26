@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { downloadWorldFile, pickWorldFile } from '@/game/storage';
 import { Game } from '@/game/Game';
+import { tap } from '@/hooks/tap';
 
 /** In-game pause menu: save/load world, install app, resume, quit. */
 
@@ -32,8 +33,7 @@ export function PauseMenu({ game, onResume, onQuit, username }: Props) {
   };
 
   const saveWorld = () => {
-    const json = game.exportSave();
-    downloadWorldFile(json, `mcweb-world-${Date.now()}.json`);
+    downloadWorldFile(game.exportSave(), `mcweb-world-${Date.now()}.json`);
     flash('World saved to your downloads.');
   };
 
@@ -53,6 +53,12 @@ export function PauseMenu({ game, onResume, onQuit, username }: Props) {
     }
   };
 
+  const resumeTap = tap(onResume);
+  const saveTap = tap(saveWorld);
+  const loadTap = tap(() => void loadWorld());
+  const installTap = tap(() => void install());
+  const quitTap = tap(onQuit);
+
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-xs rounded-lg border-4 border-black/60 bg-stone-800/95 p-6">
@@ -61,32 +67,32 @@ export function PauseMenu({ game, onResume, onQuit, username }: Props) {
 
         <div className="flex flex-col gap-2.5">
           <button
-            className="rounded border-b-4 border-emerald-900 bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-500 active:border-b-0 active:mt-0.5"
-            onClick={onResume}
+            className="game-buttons rounded border-b-4 border-emerald-900 bg-emerald-600 py-2.5 font-bold text-white hover:bg-emerald-500 active:border-b-0 active:mt-0.5"
+            {...resumeTap}
           >
             Resume Game
           </button>
           <button
-            className="rounded border-b-4 border-stone-900 bg-stone-600 py-2.5 font-bold text-white hover:bg-stone-500 active:border-b-0 active:mt-0.5"
-            onClick={saveWorld}
+            className="game-buttons rounded border-b-4 border-stone-900 bg-stone-600 py-2.5 font-bold text-white hover:bg-stone-500 active:border-b-0 active:mt-0.5"
+            {...saveTap}
           >
             Save & Download World
           </button>
           <button
-            className="rounded border-b-4 border-stone-900 bg-stone-600 py-2.5 font-bold text-white hover:bg-stone-500 active:border-b-0 active:mt-0.5"
-            onClick={loadWorld}
+            className="game-buttons rounded border-b-4 border-stone-900 bg-stone-600 py-2.5 font-bold text-white hover:bg-stone-500 active:border-b-0 active:mt-0.5"
+            {...loadTap}
           >
             Load World
           </button>
           <button
-            className="rounded border-b-4 border-sky-900 bg-sky-600 py-2.5 font-bold text-white hover:bg-sky-500 active:border-b-0 active:mt-0.5"
-            onClick={install}
+            className="game-buttons rounded border-b-4 border-sky-900 bg-sky-600 py-2.5 font-bold text-white hover:bg-sky-500 active:border-b-0 active:mt-0.5"
+            {...installTap}
           >
             Install App
           </button>
           <button
-            className="rounded border-b-4 border-red-900 bg-red-700 py-2.5 font-bold text-white hover:bg-red-600 active:border-b-0 active:mt-0.5"
-            onClick={onQuit}
+            className="game-buttons rounded border-b-4 border-red-900 bg-red-700 py-2.5 font-bold text-white hover:bg-red-600 active:border-b-0 active:mt-0.5"
+            {...quitTap}
           >
             Quit to Title
           </button>

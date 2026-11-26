@@ -79,18 +79,29 @@ interface InventoryProps {
 
 export function InventoryPanel({ allBlocks, onSelect, onClose, selectedSlot }: InventoryProps) {
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="game-buttons absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+      onTouchEnd={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
       <div
-        className="max-h-[80vh] w-[min(680px,94vw)] overflow-auto rounded-lg border-4 border-black/60 bg-stone-800/95 p-5"
+        className="game-buttons max-h-[80vh] w-[min(680px,94vw)] overflow-auto rounded-lg border-4 border-black/60 bg-stone-800/95 p-5"
         onClick={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-bold text-white">Creative Inventory</h2>
           <button
-            className="rounded border-b-2 border-red-900 bg-red-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-600 active:border-b-0"
+            className="game-buttons rounded border-b-2 border-red-900 bg-red-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-600 active:border-b-0"
             onClick={onClose}
             onTouchEnd={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               onClose();
             }}
           >
@@ -105,10 +116,11 @@ export function InventoryPanel({ allBlocks, onSelect, onClose, selectedSlot }: I
             <button
               key={id}
               title={BLOCKS[id]?.name}
-              className="flex flex-col items-center gap-1 rounded border-2 border-stone-600/60 bg-black/30 p-1.5 hover:border-white hover:bg-white/10"
+              className="game-buttons flex flex-col items-center gap-1 rounded border-2 border-stone-600/60 bg-black/30 p-1.5 hover:border-white hover:bg-white/10"
               onClick={() => onSelect(id)}
               onTouchEnd={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 onSelect(id);
               }}
             >
