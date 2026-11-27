@@ -58,18 +58,20 @@ class TilePainter {
   rect(x: number, y: number, w: number, h: number, c: Pixel) {
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.px(xx, yy, c);
   }
-  /** Draws a blob of 2x2-ish mineral specks, like Minecraft ores. */
+  /** Crystal-shaped mineral blobs, like Minecraft ores. */
   oreBlobs(color: Pixel, blobs = 5) {
     for (let b = 0; b < blobs; b++) {
       const x = 1 + Math.floor(this.rng() * 12);
       const y = 1 + Math.floor(this.rng() * 12);
       const s = 0.8 + this.rng() * 0.4;
       const c: Pixel = [color[0] * s, color[1] * s, color[2] * s, 255];
+      const hi: Pixel = [Math.min(255, color[0] * s * 1.35), Math.min(255, color[1] * s * 1.35), Math.min(255, color[2] * s * 1.35), 255];
       this.px(x, y, c);
       this.px(x + 1, y, c);
       this.px(x, y + 1, c);
-      if (this.rng() > 0.5) this.px(x + 1, y + 1, c);
-      if (this.rng() > 0.7) this.px(x - 1, y, c);
+      this.px(x + 1, y + 1, hi);
+      if (this.rng() > 0.5) this.px(x - 1, y, c);
+      if (this.rng() > 0.7) this.px(x, y - 1, c);
     }
   }
   commit() {
@@ -79,6 +81,31 @@ class TilePainter {
 
 function shade(c: Pixel, s: number): Pixel {
   return [Math.min(255, c[0] * s), Math.min(255, c[1] * s), Math.min(255, c[2] * s), c[3]];
+}
+
+/** Draws a plant stem/leaf tile with transparent background. */
+function paintPlant(p: TilePainter, stem: Pixel, leafTip?: Pixel, flower?: Pixel): void {
+  const rng = p.rng;
+  // main stem
+  for (let y = 15; y > 4; y--) p.px(7 + (y % 3 === 0 ? 1 : 0) - 1, y, shade(stem, 0.9 + rng() * 0.2));
+  // leaves
+  const leaf = leafTip ?? stem;
+  for (const [bx, by, ex, ey] of [
+    [7, 12, 3, 11],
+    [8, 10, 12, 9],
+    [7, 8, 4, 7],
+    [8, 6, 11, 5],
+  ] as Array<[number, number, number, number]>) {
+    p.px(bx, by, leaf);
+    p.px(ex, ey, shade(leaf, 1.1));
+    p.px(Math.floor((bx + ex) / 2), Math.floor((by + ey) / 2), shade(leaf, 0.95));
+  }
+  if (flower) {
+    p.rect(6, 3, 3, 3, flower);
+    p.px(7, 2, shade(flower, 1.2));
+    p.px(5, 4, shade(flower, 0.85));
+    p.px(9, 4, shade(flower, 0.85));
+  }
 }
 
 /** Atlas must be a power-of-two-friendly canvas; we draw tiles first, then text tiles last with 2D calls. */
@@ -109,11 +136,11 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
   const LEAF: Pixel = [60, 120, 40, 255];
   const SAND: Pixel = [219, 207, 163, 255];
 
-  // 0: grass top
+  // 0: grass top — bright green with noise
   painter((p) => {
-    p.fill(GRASS, 0.22);
-    p.speckle(40, shade(GRASS, 0.8));
-    p.speckle(30, shade(GRASS, 1.15));
+    p.fill(GRASS, 0.24);
+    p.speckle(45, shade(GRASS, 0.78));
+    p.speckle(35, shade(GRASS, 1.18));
   });
 
   // 1: grass side (dirt with grass overhang)
@@ -133,8 +160,8 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
     p.speckle(40, shade(DIRT, 1.12));
   });
 
-  // 3: stone
-  const stonePainter = painter((p) => {
+  // 3: stone with cracks
+  painter((p) => {
     p.fill(STONE, 0.16);
     p.speckle(50, shade(STONE, 0.82));
     p.speckle(30, shade(STONE, 1.1));
@@ -247,16 +274,13 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
 
   // 13: glass (mostly transparent with border + streaks)
   painter((p) => {
-    const GLASS: Pixel = [200, 230, 240, 255];
     for (let y = 0; y < 16; y++)
       for (let x = 0; x < 16; x++) {
         const edge = x === 0 || y === 0 || x === 15 || y === 15;
         p.px(x, y, edge ? [210, 235, 245, 255] : [230, 245, 250, 26]);
       }
-    // diagonal streaks
     for (let i = 2; i < 8; i++) p.px(i, 10 - i, [255, 255, 255, 110]);
     for (let i = 4; i < 9; i++) p.px(i + 4, 16 - i, [255, 255, 255, 70]);
-    void GLASS;
   });
 
   // 14: bricks
@@ -344,7 +368,7 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
   });
 
   // 25: TNT side — red with white band (label drawn via 2D text below)
-  const tntSidePos = painter((p) => {
+  painter((p) => {
     p.fill([190, 40, 35, 255], 0.12);
     p.rect(0, 5, 16, 6, [230, 220, 200, 255]);
     p.speckle(14, shade([190, 40, 35, 255], 0.8));
@@ -439,12 +463,10 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
   painter((p) => {
     p.fill([225, 120, 30, 255], 0.08);
     const CARVE: Pixel = [255, 220, 100, 255];
-    // triangle eyes
     p.rect(3, 4, 3, 2, CARVE);
     p.px(4, 3, CARVE);
     p.rect(10, 4, 3, 2, CARVE);
     p.px(11, 3, CARVE);
-    // jagged mouth
     p.rect(3, 10, 10, 2, CARVE);
     p.px(4, 12, CARVE);
     p.px(7, 12, CARVE);
@@ -519,8 +541,110 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
     p.speckle(12, [255, 240, 170, 255]);
   });
 
+  // 45: emerald ore
+  painter((p) => {
+    p.fill(STONE, 0.16);
+    p.speckle(30, shade(STONE, 0.85));
+    p.oreBlobs([60, 220, 120, 255], 5);
+  });
+
+  // 46: lapis ore
+  painter((p) => {
+    p.fill(STONE, 0.16);
+    p.speckle(30, shade(STONE, 0.85));
+    p.oreBlobs([35, 70, 190, 255], 6);
+  });
+
+  // 47: lava (glowing orange/yellow swirls)
+  painter((p, rng) => {
+    p.fill([215, 80, 20, 255], 0.2);
+    for (let i = 0; i < 10; i++) {
+      const x = Math.floor(rng() * 14);
+      const y = Math.floor(rng() * 14);
+      const c: Pixel = rng() > 0.5 ? [255, 160, 30, 255] : [255, 230, 90, 255];
+      p.rect(x, y, 2, 2, c);
+    }
+    p.speckle(20, [255, 250, 150, 255]);
+    p.speckle(15, [150, 40, 10, 255]);
+  });
+
+  // 48: torch (stick with glowing tip, transparent bg)
+  painter((p, rng) => {
+    // stick
+    for (let y = 6; y < 16; y++) {
+      p.px(7, y, shade(WOOD, 1.2));
+      p.px(8, y, shade(WOOD, 0.9));
+    }
+    // glowing tip
+    p.rect(6, 3, 4, 3, [255, 200, 80, 255]);
+    p.rect(7, 2, 2, 4, [255, 240, 150, 255]);
+    p.px(6, 2, [255, 250, 200, 255]);
+    void rng;
+  });
+
+  // 49: poppy (red flower, transparent bg)
+  painter((p) => {
+    paintPlant(p, [60, 130, 40, 255], undefined, [200, 40, 40, 255]);
+  });
+
+  // 50: dandelion (yellow flower)
+  painter((p) => {
+    paintPlant(p, [60, 130, 40, 255], undefined, [230, 210, 50, 255]);
+  });
+
+  // 51: tall grass (green blades)
+  painter((p, rng) => {
+    for (let x = 2; x < 14; x += 2) {
+      const h = 5 + Math.floor(rng() * 7);
+      for (let y = 15; y > 15 - h; y--) {
+        const bend = y < 15 - h + 3 ? (rng() > 0.5 ? 1 : -1) : 0;
+        p.px(x + bend, y, shade([70, 145, 45, 255], 0.8 + rng() * 0.4));
+      }
+    }
+  });
+
+  // 52: cactus side (green with darker ribs + spines)
+  painter((p, rng) => {
+    p.fill([70, 130, 50, 255], 0.12);
+    for (let x = 1; x < 16; x += 4) for (let y = 0; y < 16; y++) p.px(x, y, [50, 100, 35, 255]);
+    p.speckle(8, [220, 230, 180, 255]);
+    void rng;
+  });
+
+  // 53: cactus top
+  painter((p) => {
+    p.fill([80, 140, 55, 255], 0.1);
+    p.rect(2, 2, 12, 12, [95, 155, 65, 255]);
+  });
+
+  // 54: spruce leaves (dark blue-green)
+  painter((p, rng) => {
+    p.fill([45, 90, 60, 255], 0.28);
+    p.speckle(45, shade([45, 90, 60, 255], 0.7));
+    p.speckle(35, shade([45, 90, 60, 255], 1.3));
+    for (let i = 0; i < 12; i++) p.px(Math.floor(rng() * 16), Math.floor(rng() * 16), [0, 0, 0, 0]);
+  });
+
+  // 55: snow layer (white with blue tinge)
+  painter((p, rng) => {
+    p.fill([245, 250, 252, 255], 0.05);
+    p.hline(15, [220, 232, 240, 255]);
+    for (let x = 0; x < 16; x++) if (rng() > 0.7) p.px(x, 14, [228, 238, 246, 255]);
+  });
+
+  // 56: dead bush (brown twigs)
+  painter((p, rng) => {
+    for (let y = 15; y > 6; y--) p.px(7 + (y % 4 === 0 ? 1 : 0), y, [120, 90, 50, 255]);
+    p.px(5, 9, [110, 82, 45, 255]);
+    p.px(4, 8, [110, 82, 45, 255]);
+    p.px(9, 8, [110, 82, 45, 255]);
+    p.px(10, 7, [110, 82, 45, 255]);
+    p.px(6, 11, [110, 82, 45, 255]);
+    p.px(9, 12, [110, 82, 45, 255]);
+    void rng;
+  });
+
   // --- text-drawn tiles via 2D API (after pixel tiles) ---
-  // TNT label on the white band of the TNT side tile
   const drawLabel = (tile: number, text: string, color: string, fontPx = 7) => {
     const tx = tile % ATLAS_TILES;
     const ty = Math.floor(tile / ATLAS_TILES);
@@ -535,8 +659,43 @@ export function generateAtlasCanvas(): HTMLCanvasElement {
   };
   drawLabel(TILE.tntSide, 'TNT', '#8a1512');
 
-  void stonePainter;
   return canvas;
+}
+
+/** Builds the 4 crack-stage overlay textures (increasing crack density). */
+export function createCrackTextures(): THREE.Texture[] {
+  const stages: THREE.Texture[] = [];
+  for (let stage = 0; stage < 4; stage++) {
+    const canvas = document.createElement('canvas');
+    canvas.width = TILE_PX;
+    canvas.height = TILE_PX;
+    const ctx = canvas.getContext('2d')!;
+    const rng = makeRng(9000 + stage * 31);
+    const cracks = 2 + stage * 3;
+    ctx.clearRect(0, 0, TILE_PX, TILE_PX);
+    const img = ctx.createImageData(TILE_PX, TILE_PX);
+    for (let i = 0; i < cracks; i++) {
+      let x = Math.floor(rng() * 16);
+      let y = Math.floor(rng() * 16);
+      const len = 4 + stage * 3;
+      for (let j = 0; j < len; j++) {
+        const idx = (y * TILE_PX + x) * 4;
+        img.data[idx] = 20;
+        img.data[idx + 1] = 15;
+        img.data[idx + 2] = 10;
+        img.data[idx + 3] = 200;
+        x = Math.max(0, Math.min(15, x + Math.floor(rng() * 3) - 1));
+        y = Math.max(0, Math.min(15, y + Math.floor(rng() * 3) - 1));
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    stages.push(tex);
+  }
+  return stages;
 }
 
 export function createAtlasTexture(): THREE.Texture {
