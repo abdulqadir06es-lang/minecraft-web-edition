@@ -1,6 +1,13 @@
+import { useMemo, useState } from 'react';
 import { BLOCKS, BlockId } from '@/game/blocks';
+// 🔌 CONNECTION POINT: textures.ts should export getBlockIcon(blockId) -> string (dataURL/URL)
+// of a pre-rendered isometric 3D cube icon. If it's not available yet, we fall back to a
+// CSS isometric cube built from the color bands below.
+// import { getBlockIcon } from '@/game/textures';
 
-/** Small 2D block icon: colored top + side bands per block id. */
+/* ------------------------------------------------------------------ */
+/*  Color palettes (fallback for the CSS isometric cube)               */
+/* ------------------------------------------------------------------ */
 const TOP_COLORS: Record<number, string> = {
   1: '#5e9d34', 2: '#86603f', 3: '#7d7d7d', 4: '#8a6a3c', 5: '#3c7828', 6: '#464646',
   7: '#3f7fd8', 8: '#a04637', 9: '#6e6e6e', 10: '#a2824e', 11: '#dbcf9f', 12: '#d0c390',
@@ -20,26 +27,247 @@ const SIDE_COLORS: Record<number, string> = {
   37: '#7e6238',
 };
 
-export function BlockIcon({ id, size = 40 }: { id: BlockId; size?: number }) {
+/* ------------------------------------------------------------------ */
+/*  Block classification helpers                                      */
+/* ------------------------------------------------------------------ */
+// Non-cube items that should render as flat sprites, not 3D cubes.
+const FLAT_SPRITE_IDS = new Set<number>([12, 29, 30, 31, 32, 33, 34, 35, 36]);
+// 12 = Torch-ish?, adjust as needed. Based on BLOCKS naming below we match by name instead,
+// to be robust regardless of numeric ids.
+
+const FLAT_SPRITE_NAMES = new Set<string>([
+  'Torch',
+  'Poppy',
+  'Dandelion',
+  'Tall Grass',
+  'Cactus',
+  'Dead Bush',
+  'Snow Layer',
+]);
+
+function isFlatSprite(id: BlockId): boolean {
+  const name = BLOCKS[id]?.name ?? '';
+  return FLAT_SPRITE_NAMES.has(name);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Category classification                                           */
+/* ------------------------------------------------------------------ */
+type Category = 'All' | 'Building' | 'Nature' | 'Ores' | 'Decoration' | 'Special';
+const CATEGORIES: Category[] = ['All', 'Building', 'Nature', 'Ores', 'Decoration', 'Special'];
+
+const BUILDING_NAMES = new Set<string>([
+  'Stone', 'Cobblestone', 'Oak Planks', 'Birch Planks', 'Spruce Planks', 'Sandstone',
+  'Bricks', 'Stone Bricks', 'Glass', 'Oak Log', 'Birch Log', 'Spruce Log', 'Obsidian',
+  'Netherrack', 'Soul Sand', 'Gravel', 'Clay', 'Snow', 'Ice', 'Packed Ice', 'Bookshelf',
+  'Glowstone',
+]);
+const NATURE_NAMES = new Set<string>([
+  'Grass', 'Dirt', 'Sand', 'Oak Leaves', 'Birch Leaves', 'Spruce Leaves', 'Cactus',
+  'Poppy', 'Dandelion', 'Tall Grass', 'Dead Bush', 'Snow Layer', 'Water', 'Lava',
+]);
+const ORE_NAMES = new Set<string>([
+  'Coal Ore', 'Iron Ore', 'Gold Ore', 'Diamond Ore', 'Redstone Ore', 'Lapis Ore',
+  'Emerald Ore',
+]);
+const DECORATION_NAMES = new Set<string>([
+  'Torch', 'Glowstone', 'Bookshelf', 'Poppy', 'Dandelion', 'Tall Grass',
+]);
+const SPECIAL_NAMES = new Set<string>([
+  'Bedrock', 'TNT', 'Crafting Table', 'Furnace', 'Spawner', 'Obsidian', 'Nether Portal',
+]);
+
+function categoryOf(id: BlockId): Category {
+  const name = BLOCKS[id]?.name ?? '';
+  if (ORE_NAMES.has(name)) return 'Ores';
+  if (NATURE_NAMES.has(name)) return 'Nature';
+  if (DECORATION_NAMES.has(name)) return 'Decoration';
+  if (SPECIAL_NAMES.has(name)) return 'Special';
+  if (BUILDING_NAMES.has(name)) return 'Building';
+  // Fallback heuristics based on name keywords
+  if (/Ore/i.test(name)) return 'Ores';
+  if (/(Leaves|Grass|Flower|Poppy|Dandelion|Bush|Cactus|Sand|Dirt)/i.test(name)) return 'Nature';
+  if (/(Torch|Glow|Bookshelf|Flower)/i.test(name)) return 'Decoration';
+  if (/(Bedrock|TNT|Furnace|Table|Spawner|Portal)/i.test(name)) return 'Special';
+  return 'Building';
+}
+
+/* ------------------------------------------------------------------ */
+/*  BlockIcon — 3D isometric cube (or flat sprite for non-cubes)      */
+/* ------------------------------------------------------------------ */
+interface BlockIconProps {
+  id: BlockId;
+  size?: number;
+  /** When true, render as a flat sprite regardless of type (used for hotbar maybe). */
+  forceFlat?: boolean;
+}
+
+export function BlockIcon({ id, size = 40, forceFlat = false }: BlockIconProps) {
   const top = TOP_COLORS[id] ?? '#888';
   const side = SIDE_COLORS[id] ?? '#666';
-  const isOre = [15, 16, 17, 18, 19].includes(id);
-  const glow = id === 37;
-  return (
-    <div className="relative overflow-hidden rounded-sm border border-black/50" style={{ width: size * 0.8, height: size * 0.8 }}>
-      <div className="h-1/2 w-full" style={{ background: top }} />
-      <div className="h-1/2 w-full" style={{ background: side }} />
-      {isOre && (
-        <div className="absolute inset-0">
-          <span className="absolute left-1/4 top-1/3 h-1 w-1.5 rounded-full" style={{ background: top, filter: 'brightness(1.3)' }} />
-          <span className="absolute right-1/4 bottom-1/4 h-1.5 w-1 rounded-full" style={{ background: top, filter: 'brightness(1.2)' }} />
+
+  // 🔌 CONNECTION POINT for textures.ts isometric icon generator.
+  // getBlockIcon(id) is expected to return a dataURL/URL of a pre-rendered
+  // isometric 3D cube. Uncomment the import at the top and the line below
+  // once that function is available. For now we build the cube with CSS.
+  // const iconUrl = getBlockIcon(id);
+  const iconUrl: string | undefined = undefined; // <-- replaced by getBlockIcon(id)
+
+  const flat = forceFlat || isFlatSprite(id);
+  const isOre = [15, 16, 17, 18, 19].includes(id) || /Ore/i.test(BLOCKS[id]?.name ?? '');
+  const glow = id === 37 || /Glowstone/i.test(BLOCKS[id]?.name ?? '');
+
+  // ---- Flat sprite rendering (Torch, flowers, etc.) ----
+  if (flat && !iconUrl) {
+    return (
+      <div
+        className="relative flex items-center justify-center overflow-hidden"
+        style={{ width: size, height: size }}
+      >
+        {/* Simple sprite built from shapes, colored by block palette */}
+        <div className="relative h-3/4 w-3/4">
+          <div
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-sm"
+            style={{ width: '45%', height: '75%', background: side }}
+          />
+          <div
+            className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full"
+            style={{ width: '70%', height: '45%', background: top }}
+          />
+          {glow && <div className="absolute inset-0 animate-pulse bg-yellow-200/30" />}
         </div>
-      )}
-      {glow && <div className="absolute inset-0 animate-pulse bg-yellow-200/30" />}
+      </div>
+    );
+  }
+
+  // ---- If textures.ts provided a pre-rendered isometric icon, use it ----
+  if (iconUrl) {
+    return (
+      <img
+        src={iconUrl}
+        alt={BLOCKS[id]?.name ?? 'block'}
+        draggable={false}
+        style={{ width: size, height: size, imageRendering: 'pixelated' }}
+        className="select-none"
+      />
+    );
+  }
+
+  // ---- CSS isometric 3D cube fallback ----
+  // A cube has 3 visible faces: top (brightest), left (medium), right (darkest).
+  const cubeSize = size * 0.78;
+  return (
+    <div
+      className="relative flex items-center justify-center"
+      style={{ width: size, height: size, perspective: 200 }}
+      aria-hidden
+    >
+      <div
+        className="relative"
+        style={{
+          width: cubeSize * 0.58,
+          height: cubeSize * 0.58,
+          transformStyle: 'preserve-3d',
+          transform: 'rotateX(-30deg) rotateY(45deg)',
+        }}
+      >
+        {/* Top face — brightest */}
+        <div
+          className="absolute"
+          style={{
+            width: cubeSize * 0.58,
+            height: cubeSize * 0.58,
+            background: top,
+            transform: `rotateX(90deg) translateZ(${cubeSize * 0.29}px)`,
+            filter: 'brightness(1.15)',
+          }}
+        />
+        {/* Left face — medium */}
+        <div
+          className="absolute"
+          style={{
+            width: cubeSize * 0.58,
+            height: cubeSize * 0.58,
+            background: side,
+            transform: `rotateY(-90deg) translateZ(${cubeSize * 0.29}px)`,
+            filter: 'brightness(0.9)',
+          }}
+        />
+        {/* Right face — darkest */}
+        <div
+          className="absolute"
+          style={{
+            width: cubeSize * 0.58,
+            height: cubeSize * 0.58,
+            background: side,
+            transform: `translateZ(${cubeSize * 0.29}px)`,
+            filter: 'brightness(0.72)',
+          }}
+        />
+        {/* Ore speckles on top face */}
+        {isOre && (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              width: cubeSize * 0.58,
+              height: cubeSize * 0.58,
+              transform: `rotateX(90deg) translateZ(${cubeSize * 0.295}px)`,
+              backgroundImage: `radial-gradient(circle at 25% 30%, ${top} 0 2px, transparent 3px),
+                                radial-gradient(circle at 70% 60%, ${top} 0 2px, transparent 3px),
+                                radial-gradient(circle at 45% 80%, ${top} 0 1.5px, transparent 3px)`,
+              filter: 'brightness(1.4)',
+            }}
+          />
+        )}
+      </div>
+      {glow && <div className="pointer-events-none absolute inset-0 animate-pulse bg-yellow-200/20" />}
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Minecraft-style slot                                              */
+/* ------------------------------------------------------------------ */
+interface SlotProps {
+  children: React.ReactNode;
+  selected?: boolean;
+  onClick?: () => void;
+  onTouchEnd?: (e: React.TouchEvent) => void;
+  title?: string;
+  className?: string;
+  size?: number;
+}
+
+function MinecraftSlot({
+  children,
+  selected = false,
+  onClick,
+  onTouchEnd,
+  title,
+  className = '',
+  size = 48,
+}: SlotProps) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      onTouchEnd={onTouchEnd}
+      style={{ width: size, height: size }}
+      className={`group relative flex items-center justify-center border-2 ${
+        selected
+          ? 'border-white bg-white/20'
+          : 'border-t-stone-400 border-l-stone-400 border-b-stone-900 border-r-stone-900 bg-stone-600/80'
+      } hover:border-t-stone-300 hover:border-l-stone-300 hover:bg-stone-500/80 ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Hotbar                                                            */
+/* ------------------------------------------------------------------ */
 interface HotbarProps {
   slots: BlockId[];
   selected: number;
@@ -50,26 +278,44 @@ export function Hotbar({ slots, selected, onSelect }: HotbarProps) {
   return (
     <div className="pointer-events-auto fixed bottom-2 left-1/2 z-30 flex -translate-x-1/2 gap-1 rounded border-2 border-black/60 bg-black/50 p-1 backdrop-blur-sm">
       {slots.map((id, i) => (
-        <button
+        <MinecraftSlot
           key={i}
+          selected={selected === i}
           onClick={() => onSelect(i)}
           onTouchEnd={(e) => {
             e.preventDefault();
             onSelect(i);
           }}
-          className={`relative flex h-12 w-12 items-center justify-center border-2 ${
-            selected === i ? 'border-white bg-white/20' : 'border-stone-600/60 bg-black/30'
-          } hover:bg-white/10`}
           title={BLOCKS[id]?.name}
+          size={48}
         >
           <BlockIcon id={id} size={36} />
-          <span className="absolute bottom-0 right-0.5 text-[10px] font-bold text-white/80">{i + 1}</span>
-        </button>
+          <span className="pointer-events-none absolute bottom-0 right-1 text-[10px] font-bold text-white/80">
+            {i + 1}
+          </span>
+        </MinecraftSlot>
       ))}
     </div>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Tooltip                                                           */
+/* ------------------------------------------------------------------ */
+function Tooltip({ label }: { label: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute -top-7 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded border border-purple-300/40 bg-[#100010]/95 px-2 py-0.5 text-[11px] font-medium text-white shadow-lg"
+    >
+      {label}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  InventoryPanel                                                    */
+/* ------------------------------------------------------------------ */
 interface InventoryProps {
   allBlocks: BlockId[];
   onSelect: (id: BlockId) => void;
@@ -78,6 +324,19 @@ interface InventoryProps {
 }
 
 export function InventoryPanel({ allBlocks, onSelect, onClose, selectedSlot }: InventoryProps) {
+  const [activeCategory, setActiveCategory] = useState<Category>('All');
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allBlocks.filter((id) => {
+      const name = BLOCKS[id]?.name ?? '';
+      const matchesCategory = activeCategory === 'All' || categoryOf(id) === activeCategory;
+      const matchesSearch = q === '' || name.toLowerCase().includes(q);
+      return matchesCategory && matchesSearch;
+    });
+  }, [allBlocks, activeCategory, search]);
+
   return (
     <div
       className="game-buttons absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -90,11 +349,12 @@ export function InventoryPanel({ allBlocks, onSelect, onClose, selectedSlot }: I
       }}
     >
       <div
-        className="game-buttons max-h-[80vh] w-[min(680px,94vw)] overflow-auto rounded-lg border-4 border-black/60 bg-stone-800/95 p-5"
+        className="game-buttons flex max-h-[80vh] w-[min(720px,94vw)] flex-col overflow-hidden rounded-lg border-4 border-black/60 bg-stone-800/95"
         onClick={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-black/40 px-4 py-3">
           <h2 className="text-lg font-bold text-white">Creative Inventory</h2>
           <button
             className="game-buttons rounded border-b-2 border-red-900 bg-red-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-600 active:border-b-0"
@@ -108,26 +368,73 @@ export function InventoryPanel({ allBlocks, onSelect, onClose, selectedSlot }: I
             Close (E)
           </button>
         </div>
-        <p className="mb-3 text-xs text-stone-400">
-          Tap a block to put it in hotbar slot {selectedSlot + 1}. Press E or ESC to close.
-        </p>
-        <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
-          {allBlocks.map((id) => (
+
+        {/* Search + hint */}
+        <div className="flex flex-col gap-2 px-4 pt-3">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search blocks..."
+            className="w-full rounded border-2 border-stone-600 bg-stone-900/80 px-3 py-1.5 text-sm text-white placeholder-stone-500 outline-none focus:border-stone-400"
+          />
+          <p className="text-xs text-stone-400">
+            Tap a block to put it in hotbar slot {selectedSlot + 1}. Press E or ESC to close.
+          </p>
+        </div>
+
+        {/* Category tabs */}
+        <div className="flex flex-wrap gap-1 px-4 pt-2">
+          {CATEGORIES.map((cat) => (
             <button
-              key={id}
-              title={BLOCKS[id]?.name}
-              className="game-buttons flex flex-col items-center gap-1 rounded border-2 border-stone-600/60 bg-black/30 p-1.5 hover:border-white hover:bg-white/10"
-              onClick={() => onSelect(id)}
+              key={cat}
+              type="button"
+              onClick={() => setActiveCategory(cat)}
               onTouchEnd={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-                onSelect(id);
+                setActiveCategory(cat);
               }}
+              className={`rounded-t border-2 border-b-0 px-3 py-1 text-xs font-semibold transition-colors ${
+                activeCategory === cat
+                  ? 'border-stone-400 bg-stone-600 text-white'
+                  : 'border-stone-700 bg-stone-900/60 text-stone-400 hover:bg-stone-700/60 hover:text-stone-200'
+              }`}
             >
-              <BlockIcon id={id} size={36} />
-              <span className="w-full truncate text-center text-[9px] leading-tight text-stone-300">{BLOCKS[id]?.name}</span>
+              {cat}
             </button>
           ))}
+        </div>
+
+        {/* Grid */}
+        <div className="flex-1 overflow-auto border-t-2 border-stone-500/60 bg-stone-900/40 p-4">
+          {filtered.length === 0 ? (
+            <p className="py-8 text-center text-sm text-stone-500">No blocks match your search.</p>
+          ) : (
+            <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
+              {filtered.map((id) => (
+                <MinecraftSlot
+                  key={id}
+                  title={BLOCKS[id]?.name}
+                  onClick={() => onSelect(id)}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelect(id);
+                  }}
+                  size={56}
+                  className="flex-col"
+                >
+                  <BlockIcon id={id} size={38} />
+                  <span className="pointer-events-none w-full truncate text-center text-[9px] leading-tight text-stone-300">
+                    {BLOCKS[id]?.name}
+                  </span>
+                  <span className="opacity-0 group-hover:opacity-100">
+                    <Tooltip label={BLOCKS[id]?.name ?? 'Unknown'} />
+                  </span>
+                </MinecraftSlot>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
